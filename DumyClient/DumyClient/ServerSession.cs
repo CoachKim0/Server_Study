@@ -17,7 +17,11 @@ public class ServerSession : Session
         Console.WriteLine($"OnConnected : {endPoint}");
 
         PlayerInfoReq packet = new PlayerInfoReq()
-            { playerId = 1001 };
+            { playerId = 1001, name = "ABCD" };
+        packet.skills.Add(new PlayerInfoReq.SkillInfo() { id = 101, level = 1, duration = 1.0f });
+        packet.skills.Add(new PlayerInfoReq.SkillInfo() { id = 201, level = 2, duration = 2.0f });
+        packet.skills.Add(new PlayerInfoReq.SkillInfo() { id = 301, level = 3, duration = 3.0f });
+        packet.skills.Add(new PlayerInfoReq.SkillInfo() { id = 401, level = 4, duration = 4.0f });
         ArraySegment<byte> s = packet.Write();
 
         if (s != null) Send(s);

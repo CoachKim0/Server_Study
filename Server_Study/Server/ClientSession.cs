@@ -4,58 +4,6 @@ using ServerCore;
 
 namespace Server_Study;
 
-public abstract class Packet
-{
-    public ushort size;
-    public ushort packetId;
-
-    public abstract ArraySegment<byte> Write();
-    public abstract void Read(ArraySegment<byte> bytes);
-}
-
-public class PlayerInfoReq : Packet
-{
-    public long playerId;
-
-    public PlayerInfoReq()
-    {
-        this.packetId = (ushort)PacketID.PlayerInfoReq;
-    }
-
-    public override void Read(ArraySegment<byte> bytes)
-    {
-        ushort count = 0;
-        count += 2;
-        count += 2;
-        this.playerId = BitConverter.ToInt64(bytes.Array, bytes.Offset + count);
-        count += 8;
-    }
-
-    public override ArraySegment<byte> Write()
-    {
-        ArraySegment<byte> s = SendBufferHelper.Open(4096);
-
-        ushort count = 0;
-        bool success = true;
-
-
-        var span = new Span<byte>(s.Array, s.Offset, s.Count);
-        success = BinaryPrimitives.TryWriteUInt16LittleEndian(span, size) &&
-                  BinaryPrimitives.TryWriteUInt16LittleEndian(span.Slice(2), packetId) &&
-                  BinaryPrimitives.TryWriteInt64LittleEndian(span.Slice(4), playerId);
-
-        count += 12;
-        ArraySegment<byte> sendBuff = SendBufferHelper.Close(count);
-        return sendBuff;
-    }
-}
-
-public enum PacketID
-{
-    PlayerInfoReq = 1,
-    PlayerInfoOk = 2,
-}
-
 /// <summary>
 /// 게임 클라이언트와의 세션을 처리하는 구체적인 세션 클래스
 /// Session 추상 클래스를 상속받아 게임 로직에 맞는 네트워크 처리를 구현
@@ -81,25 +29,25 @@ class ClientSession : PacketSession
 
     public override void OnRecvPacket(ArraySegment<byte> buffer)
     {
-        /*var reader = new PacketReader(buffer);
-        ushort size = reader.ReadUInt16();
-        ushort id = reader.ReadUInt16();*/
         ushort count = 0;
-        ushort size = BitConverter.ToUInt16(buffer.Array , buffer.Offset);
+        ushort size = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
         count += 2;
-        ushort id =  BitConverter.ToUInt16(buffer.Array , buffer.Offset + count);
+        ushort id = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
         count += 2;
 
         switch ((PacketID)id)
         {
             case PacketID.PlayerInfoReq:
             {
-                //long playerId = BitConverter.ToInt64(buffer.Array, buffer.Offset + count);
-                /*
-                 PlayerInfoReq p = new PlayerInfoReq();
+                PlayerInfoReq p = new PlayerInfoReq();
                 p.Read(buffer);
-                Console.WriteLine($"PlayerInfoReq : {p.packetId}  {p.playerId}");
-                */
+                Console.WriteLine($"PlayerInfoReq : {p.name}  {p.playerId}");
+
+                // skill
+                foreach (var skill in p.skills)
+                {
+                    Console.WriteLine($"skill :  {skill.id} , {skill.level} , {skill.duration}");
+                }
             }
                 break;
         }
