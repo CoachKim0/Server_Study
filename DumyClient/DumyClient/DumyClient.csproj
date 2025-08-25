@@ -10,6 +10,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\Server_Study\Core\Core.csproj" />
+      <ProjectReference Include="..\..\Server_Study\PacketGenerator\PacketGenerator.csproj" />
     </ItemGroup>
 
 </Project>

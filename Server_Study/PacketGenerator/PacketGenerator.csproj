@@ -7,4 +7,26 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
+    <ItemGroup>
+      <PackageReference Include="Google.Protobuf" Version="3.32.0" />
+      <PackageReference Include="Google.Protobuf.Tools" Version="3.32.0" />
+    </ItemGroup>
+
+    <!-- Protobuf 파일들을 자동으로 컴파일하도록 설정 -->
+    <ItemGroup>
+      <Protobuf Include="Protos\*.proto" GrpcServices="None" CompileOutputs="false" />
+    </ItemGroup>
+    <ItemGroup>
+      <Folder Include="Packets\" />
+    </ItemGroup>
+    
+    <!-- 빌드 전에 protoc 수동 실행 -->
+    <Target Name="CompileProtoFiles" BeforeTargets="BeforeCompile">
+      <Exec Command="&quot;$(PkgGoogle_Protobuf_Tools)\tools\windows_x64\protoc.exe&quot; --csharp_out=Packets --proto_path=Protos Protos\*.proto" 
+            WorkingDirectory="$(ProjectDir)" />
+      <ItemGroup>
+        <Compile Include="Packets\*.cs" />
+      </ItemGroup>
+    </Target>
+
 </Project>

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+// C# 네임스페이스 지정
+option csharp_namespace = "GamePackets";
+
+// 게임에서 사용할 패킷들을 정의합니다
+
+message PlayerInfoReq {
+  int64 player_id = 1;
+  string name = 2;
+  repeated SkillInfo skills = 3;  // repeated = 배열/리스트
+
+  // 중첩 메시지 (nested message)
+  message SkillInfo {
+    int32 id = 1;
+    int32 level = 2;
+    float duration = 3;
+  }
+}

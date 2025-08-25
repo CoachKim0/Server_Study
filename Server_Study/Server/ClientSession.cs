@@ -1,5 +1,6 @@
 ﻿using System.Buffers.Binary;
 using System.Net;
+using GamePackets;
 using ServerCore;
 
 namespace Server_Study;
@@ -8,7 +9,7 @@ namespace Server_Study;
 /// 게임 클라이언트와의 세션을 처리하는 구체적인 세션 클래스
 /// Session 추상 클래스를 상속받아 게임 로직에 맞는 네트워크 처리를 구현
 /// </summary>
-class ClientSession : PacketSession
+class ClientSession : ProtobufPacketSession
 {
     /// <summary>
     /// 클라이언트가 서버에 연결되었을 때 호출되는 메서드
@@ -27,32 +28,30 @@ class ClientSession : PacketSession
         Disconnect();
     }
 
-    public override void OnRecvPacket(ArraySegment<byte> buffer)
+    public override void OnRecvProtobuf(ArraySegment<byte> protobufData)
     {
-        ushort count = 0;
-        ushort size = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
-        count += 2;
-        ushort id = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
-        count += 2;
+        Console.WriteLine($"[DEBUG] Protobuf 데이터 처리 시작: 데이터 크기={protobufData.Count}");
 
-        switch ((PacketID)id)
+        try
         {
-            case PacketID.PlayerInfoReq:
+            // PlayerInfoReq로 파싱 시도
+            PlayerInfoReq p = PlayerInfoReq.Parser.ParseFrom(protobufData.Array, protobufData.Offset, protobufData.Count);
+            Console.WriteLine($"[SUCCESS] PlayerInfoReq 파싱 성공!");
+            Console.WriteLine($"PlayerId: {p.PlayerId}");
+            Console.WriteLine($"Name: {p.Name}");
+
+            // skill 정보 출력
+            Console.WriteLine($"Skills 개수: {p.Skills.Count}");
+            foreach (var skill in p.Skills)
             {
-                PlayerInfoReq p = new PlayerInfoReq();
-                p.Read(buffer);
-                Console.WriteLine($"PlayerInfoReq : {p.name}  {p.playerId}");
-
-                // skill
-                foreach (var skill in p.skills)
-                {
-                    Console.WriteLine($"skill :  {skill.id} , {skill.level} , {skill.duration}");
-                }
+                Console.WriteLine($"  Skill: ID={skill.Id}, Level={skill.Level}, Duration={skill.Duration}");
             }
-                break;
         }
-
-        Console.WriteLine($"OnRecvPacket : {size} , {id}");
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] Protobuf 파싱 실패: {ex.Message}");
+            Console.WriteLine($"[ERROR] 스택 트레이스: {ex.StackTrace}");
+        }
     }
 
 // 헬퍼 구조체

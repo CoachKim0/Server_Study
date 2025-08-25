@@ -15,9 +15,9 @@ namespace ServerCore
         public static ThreadLocal<SendBuffer> CurrentBuffer = new ThreadLocal<SendBuffer>(() => { return null; });
         
         /// <summary>
-        /// 버퍼 청크 크기 (기본값: 4KB)
+        /// 버퍼 청크 크기 (기본값: 8KB로 증가)
         /// </summary>
-        public static int ChunkSize { get; set; } = 4096;
+        public static int ChunkSize { get; set; } = 8192;
 
         /// <summary>
         /// 송신할 데이터 영역을 예약하고 버퍼 세그먼트를 반환
