@@ -2,7 +2,7 @@
 using Google.Protobuf;
 using ServerCore;
 
-namespace Server_Study;
+namespace Server_Study.Modules.GamePlay.Room;
 
 /// <summary>
 /// 게임방 예제 테스트

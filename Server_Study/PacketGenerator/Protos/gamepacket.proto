@@ -4,7 +4,12 @@ syntax = "proto3";
 option csharp_namespace = "GamePackets";
 
 // 게임에서 사용할 패킷들을 정의합니다
-// S_CHAT
+// C_CHAT (클라이언트에서 서버로)
+message C_Chat {
+  string message = 1;
+}
+
+// S_CHAT (서버에서 클라이언트로)
 message S_Chat {
   int64  playerid = 1;
   string mesage = 2;

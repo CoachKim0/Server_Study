@@ -3,6 +3,9 @@ using DummyClient.Chat.Interfaces;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using GamePackets;
+using Google.Protobuf;
+using ServerCore;
 
 namespace DummyClient.Chat.TCP;
 
@@ -183,19 +186,15 @@ public class TcpChatService : IChatService
 
         try
         {
-            var messagePacket = new
+            // Protocol Buffers C_Chat 패킷 생성
+            var chatPacket = new C_Chat
             {
-                Type = "ChatMessage",
-                RoomId = CurrentRoom,
-                UserName = UserName,
                 Message = message
             };
             
-            await SendPacketAsync(messagePacket);
+            await SendProtobufPacketAsync(PacketID.CChat, chatPacket);
             
             Console.WriteLine($"📤 [TCP] 메시지 전송: {message}");
-            
-            Console.WriteLine($"📤 [TCP] 메시지 전송 완료: {message}");
             
             return true;
         }
@@ -215,6 +214,33 @@ public class TcpChatService : IChatService
         
         await _networkStream.WriteAsync(data, 0, data.Length);
         await _networkStream.FlushAsync();
+    }
+    
+    private async Task SendProtobufPacketAsync(PacketID packetId, IMessage message)
+    {
+        if (_networkStream == null) return;
+        
+        // 패킷 ID를 2바이트로 직렬화
+        byte[] packetIdBytes = BitConverter.GetBytes((ushort)packetId);
+        
+        // Protocol Buffers 메시지를 바이트 배열로 직렬화
+        byte[] messageBytes = message.ToByteArray();
+        
+        // 패킷 크기 (패킷 ID 2바이트 + 메시지 크기)
+        ushort packetSize = (ushort)(sizeof(ushort) + messageBytes.Length);
+        byte[] sizeBytes = BitConverter.GetBytes(packetSize);
+        
+        // 최종 패킷: [크기 2바이트][패킷ID 2바이트][메시지 데이터]
+        byte[] packet = new byte[sizeof(ushort) + sizeof(ushort) + messageBytes.Length];
+        
+        Array.Copy(sizeBytes, 0, packet, 0, sizeof(ushort));
+        Array.Copy(packetIdBytes, 0, packet, sizeof(ushort), sizeof(ushort));  
+        Array.Copy(messageBytes, 0, packet, sizeof(ushort) + sizeof(ushort), messageBytes.Length);
+        
+        await _networkStream.WriteAsync(packet, 0, packet.Length);
+        await _networkStream.FlushAsync();
+        
+        Console.WriteLine($"[TCP] Protocol Buffers 패킷 전송 - ID: {packetId}, 크기: {packetSize}바이트");
     }
     
     private async Task ReceiveMessagesAsync(CancellationToken cancellationToken)

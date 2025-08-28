@@ -16,7 +16,8 @@
       "Bash(powershell:*)",
       "Bash(dir)",
       "Bash(git checkout:*)",
-      "Bash(git clean:*)"
+      "Bash(git clean:*)",
+      "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)"
     ],
     "deny": [],
     "ask": [],

@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 // C# 네임스페이스 지정
-option csharp_namespace = "GrpcApp";
+option csharp_namespace = "DummyClient.gRPC";
 
 // gRPC 서비스 정의
 service GameService {

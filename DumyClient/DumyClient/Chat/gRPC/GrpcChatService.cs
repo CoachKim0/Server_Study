@@ -24,8 +24,8 @@ public class GrpcChatService : IChatService
     private GrpcChannel? _channel;
     private string _serverAddress = "";
     private int _port;
-    private ChatService.ChatServiceClient? _client;
-    private AsyncDuplexStreamingCall<ChatMessage, ChatMessage>? _streamCall;
+    private GameService.GameServiceClient? _client;
+    private AsyncDuplexStreamingCall<GameMessage, GameMessage>? _streamCall;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _receiveTask;
 
@@ -38,10 +38,10 @@ public class GrpcChatService : IChatService
             
             var address = $"http://{serverAddress}:{port}";
             _channel = GrpcChannel.ForAddress(address);
-            _client = new ChatService.ChatServiceClient(_channel);
+            _client = new GameService.GameServiceClient(_channel);
             
             _cancellationTokenSource = new CancellationTokenSource();
-            _streamCall = _client.StreamChat(cancellationToken: _cancellationTokenSource.Token);
+            _streamCall = _client.Game(cancellationToken: _cancellationTokenSource.Token);
             _receiveTask = ReceiveMessagesAsync(_cancellationTokenSource.Token);
             
             IsConnected = true;
@@ -106,13 +106,36 @@ public class GrpcChatService : IChatService
 
         try
         {
-            var joinMessage = new ChatMessage
+            // 1. 먼저 인증 수행
+            var authMessage = new GameMessage
             {
                 UserId = userName,
-                RoomId = roomId,
-                Content = $"{userName}님이 입장했습니다",
-                Type = MessageType.Join,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                AuthUser = new AuthUser
+                {
+                    PlatformType = 1, // PC 플랫폼
+                    AuthKey = "dummy_auth_key_" + userName
+                }
+            };
+            
+            await SendGrpcMessageAsync(authMessage);
+            Console.WriteLine($"🔐 [gRPC] {userName} 인증 요청 전송");
+            
+            // 인증 응답 대기 (간단히 짧은 대기)
+            await Task.Delay(100);
+            
+            // 2. 방 입장 수행
+            var joinMessage = new GameMessage
+            {
+                UserId = userName,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                JoinRoom = new JoinRoom
+                {
+                    RoomId = roomId,
+                    RoomName = roomId,
+                    CreateIfNotExists = true,
+                    MaxUsers = 10
+                }
             };
             
             await SendGrpcMessageAsync(joinMessage);
@@ -150,13 +173,14 @@ public class GrpcChatService : IChatService
             string roomId = CurrentRoom;
             string userName = UserName;
             
-            var leaveMessage = new ChatMessage
+            var leaveMessage = new GameMessage
             {
                 UserId = userName,
-                RoomId = roomId,
-                Content = $"{userName}님이 퇴장했습니다",
-                Type = MessageType.Leave,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                LeaveRoom = new LeaveRoom
+                {
+                    RoomId = roomId
+                }
             };
             
             await SendGrpcMessageAsync(leaveMessage);
@@ -194,13 +218,16 @@ public class GrpcChatService : IChatService
 
         try
         {
-            var chatMessage = new ChatMessage
+            var chatMessage = new GameMessage
             {
                 UserId = UserName,
-                RoomId = CurrentRoom,
-                Content = message,
-                Type = MessageType.Chat,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                RoomMessage = new RoomMessage
+                {
+                    RoomId = CurrentRoom,
+                    Content = message,
+                    SenderId = UserName
+                }
             };
             
             await SendGrpcMessageAsync(chatMessage);
@@ -218,10 +245,11 @@ public class GrpcChatService : IChatService
         }
     }
     
-    private async Task SendGrpcMessageAsync(ChatMessage message)
+    private async Task SendGrpcMessageAsync(GameMessage message)
     {
         if (_streamCall?.RequestStream == null) return;
         
+        Console.WriteLine($"🔍 [클라이언트] 메시지 전송: UserId={message.UserId}, Type={message.MessageTypeCase}");
         await _streamCall.RequestStream.WriteAsync(message);
     }
     
@@ -251,50 +279,85 @@ public class GrpcChatService : IChatService
         }
     }
     
-    private async Task ProcessReceivedGrpcMessage(ChatMessage message)
+    private async Task ProcessReceivedGrpcMessage(GameMessage message)
     {
         try
         {
-            switch (message.Type)
+            // 배치 메시지 처리
+            if (message.BatchMessages != null)
             {
-                case MessageType.Chat:
+                Console.WriteLine($"📦 [gRPC] 배치 메시지 수신: {message.BatchMessages.Messages.Count}개");
+                foreach (var batchedMessage in message.BatchMessages.Messages)
+                {
+                    await ProcessSingleMessage(batchedMessage);
+                }
+                return;
+            }
+            
+            await ProcessSingleMessage(message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ [gRPC] 메시지 처리 오류: {ex.Message}");
+        }
+    }
+    
+    private async Task ProcessSingleMessage(GameMessage message)
+    {
+        try
+        {
+            switch (message.MessageTypeCase)
+            {
+                case GameMessage.MessageTypeOneofCase.RoomMessage:
                     OnMessageReceived?.Invoke(new ChatEventArgs
                     {
-                        RoomId = message.RoomId,
+                        RoomId = message.RoomMessage.RoomId,
                         UserName = message.UserId,
                         UserId = message.UserId,
-                        Message = message.Content,
+                        Message = message.RoomMessage.Content,
                         EventType = ChatEventType.Message,
                         Timestamp = DateTimeOffset.FromUnixTimeSeconds(message.Timestamp).DateTime
                     });
                     break;
                     
-                case MessageType.Join:
+                case GameMessage.MessageTypeOneofCase.UserJoined:
                     OnUserJoined?.Invoke(new ChatEventArgs
                     {
-                        RoomId = message.RoomId,
-                        UserName = message.UserId,
-                        UserId = message.UserId,
-                        Message = message.Content,
+                        RoomId = message.UserJoined.RoomId,
+                        UserName = message.UserJoined.UserId,
+                        UserId = message.UserJoined.UserId,
+                        Message = $"{message.UserJoined.UserId}님이 입장했습니다",
                         EventType = ChatEventType.UserJoined,
                         Timestamp = DateTimeOffset.FromUnixTimeSeconds(message.Timestamp).DateTime
                     });
                     break;
                     
-                case MessageType.Leave:
+                case GameMessage.MessageTypeOneofCase.UserLeft:
                     OnUserLeft?.Invoke(new ChatEventArgs
                     {
-                        RoomId = message.RoomId,
-                        UserName = message.UserId,
-                        UserId = message.UserId,
-                        Message = message.Content,
+                        RoomId = message.UserLeft.RoomId,
+                        UserName = message.UserLeft.UserId,
+                        UserId = message.UserLeft.UserId,
+                        Message = $"{message.UserLeft.UserId}님이 퇴장했습니다",
                         EventType = ChatEventType.UserLeft,
                         Timestamp = DateTimeOffset.FromUnixTimeSeconds(message.Timestamp).DateTime
                     });
                     break;
                     
-                case MessageType.System:
-                    Console.WriteLine($"🔔 [gRPC] 시스템 메시지: {message.Content}");
+                case GameMessage.MessageTypeOneofCase.JoinRoom:
+                    Console.WriteLine($"🎉 [gRPC] 방 입장 응답: {message.ResultMessage}");
+                    break;
+                    
+                case GameMessage.MessageTypeOneofCase.LeaveRoom:
+                    Console.WriteLine($"👋 [gRPC] 방 나가기 응답: {message.ResultMessage}");
+                    break;
+                    
+                case GameMessage.MessageTypeOneofCase.AuthUser:
+                    Console.WriteLine($"🔐 [gRPC] 인증 응답: {message.ResultMessage}");
+                    break;
+                    
+                default:
+                    Console.WriteLine($"🔔 [gRPC] 시스템 메시지: {message.ResultMessage}");
                     break;
             }
         }

@@ -1,6 +1,7 @@
 using Grpc.Core;
 using GrpcApp;
 using System.Collections.Concurrent;
+using System.Timers;
 
 namespace GrpcServer.Services;
 
@@ -9,6 +10,12 @@ public class GameGrpcService : GameService.GameServiceBase
     private readonly ILogger<GameGrpcService> _logger;
     private static readonly ConcurrentDictionary<string, ClientInfo> _connectedClients = new();
     private static readonly ConcurrentDictionary<string, RoomInfo> _rooms = new();
+    
+    // 배칭 관련 필드
+    private static readonly ConcurrentDictionary<string, List<GameMessage>> _pendingMessages = new();
+    private static readonly ConcurrentDictionary<string, System.Timers.Timer> _roomBatchTimers = new();
+    private static readonly object _batchLock = new object();
+    private const int BATCH_INTERVAL_MS = 50; // 50ms마다 배치 전송
 
     public GameGrpcService(ILogger<GameGrpcService> logger)
     {
@@ -64,6 +71,8 @@ public class GameGrpcService : GameService.GameServiceBase
 
     private async Task<GameMessage?> ProcessGameMessage(GameMessage request, ClientInfo clientInfo)
     {
+        _logger.LogInformation($"🔍 [메시지 디버깅] UserId: {request.UserId}, MessageType: {request.MessageTypeCase}");
+        
         var response = new GameMessage
         {
             UserId = request.UserId,
@@ -317,6 +326,7 @@ public class GameGrpcService : GameService.GameServiceBase
             return;
         }
 
+        // 디버깅용: 일단 즉시 전송으로 변경
         var tasks = new List<Task>();
         _logger.LogInformation($"방 {roomId}에 브로드캐스트 시작, 대상 사용자: [{string.Join(", ", room.Users.Keys)}], 제외: {excludeUserId}");
 
@@ -342,6 +352,127 @@ public class GameGrpcService : GameService.GameServiceBase
         }
 
         _logger.LogInformation($"총 {tasks.Count}개의 클라이언트에게 브로드캐스트");
+        await Task.WhenAll(tasks);
+    }
+    
+    private void AddToBatch(string roomId, GameMessage message, string? excludeUserId = null)
+    {
+        lock (_batchLock)
+        {
+            // 룸별 펜딩 메시지 리스트 가져오거나 생성
+            if (!_pendingMessages.TryGetValue(roomId, out var messages))
+            {
+                messages = new List<GameMessage>();
+                _pendingMessages.TryAdd(roomId, messages);
+            }
+            
+            // 메시지에 exclude 정보를 안전하게 저장 (복사본 생성)
+            var messageToStore = new GameMessage(message); // 복사본 생성
+            if (!string.IsNullOrEmpty(excludeUserId))
+            {
+                messageToStore.ResponseData = $"exclude:{excludeUserId}";
+            }
+            
+            messages.Add(messageToStore);
+            
+            // 첫 번째 메시지가 추가되면 즉시 타이머 시작
+            if (messages.Count == 1)
+            {
+                // 기존 타이머가 있다면 정리
+                if (_roomBatchTimers.TryRemove(roomId, out var existingTimer))
+                {
+                    existingTimer.Dispose();
+                }
+                
+                var timer = new System.Timers.Timer(BATCH_INTERVAL_MS);
+                timer.Elapsed += async (sender, e) => await FlushBatchedMessages(roomId);
+                timer.AutoReset = false; // 한 번만 실행
+                timer.Start();
+                _roomBatchTimers.TryAdd(roomId, timer);
+                
+                _logger.LogDebug($"방 {roomId}에 대한 배치 타이머 시작 (메시지 {messages.Count}개)");
+            }
+        }
+    }
+    
+    private async Task FlushBatchedMessages(string roomId)
+    {
+        List<GameMessage> messagesToSend;
+        
+        lock (_batchLock)
+        {
+            // 펜딩 메시지 가져오기
+            if (!_pendingMessages.TryGetValue(roomId, out var messages) || messages.Count == 0)
+            {
+                return;
+            }
+            
+            messagesToSend = new List<GameMessage>(messages);
+            messages.Clear();
+            
+            // 타이머 정리
+            if (_roomBatchTimers.TryRemove(roomId, out var timer))
+            {
+                timer.Dispose();
+            }
+        }
+        
+        if (!_rooms.TryGetValue(roomId, out var room))
+        {
+            _logger.LogWarning($"배치 전송 중 방을 찾을 수 없음: {roomId}");
+            return;
+        }
+        
+        // 배치 메시지 생성
+        var batchMessage = new GameMessage
+        {
+            UserId = "System",
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ResultCode = (int)ResultCode.Success,
+            BatchMessages = new BatchGameMessages
+            {
+                BatchId = Guid.NewGuid().ToString(),
+                BatchTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            }
+        };
+        batchMessage.BatchMessages.Messages.AddRange(messagesToSend);
+        
+        var tasks = new List<Task>();
+        var excludeUserIds = new HashSet<string>();
+        
+        // exclude 정보 수집
+        foreach (var msg in messagesToSend)
+        {
+            if (!string.IsNullOrEmpty(msg.ResponseData) && msg.ResponseData.StartsWith("exclude:"))
+            {
+                excludeUserIds.Add(msg.ResponseData.Substring(8));
+            }
+        }
+        
+        _logger.LogInformation($"방 {roomId}에 배치 브로드캐스트 시작, 메시지 {messagesToSend.Count}개, 대상 사용자: [{string.Join(", ", room.Users.Keys)}], 제외: [{string.Join(", ", excludeUserIds)}]");
+        
+        foreach (var kvp in room.Users)
+        {
+            var userId = kvp.Key;
+            if (excludeUserIds.Contains(userId))
+            {
+                _logger.LogDebug($"사용자 {userId} 제외됨");
+                continue;
+            }
+
+            var client = _connectedClients.Values.FirstOrDefault(c => c.UserId == userId);
+            if (client?.ResponseStream != null)
+            {
+                _logger.LogDebug($"사용자 {userId}에게 배치 메시지 전송");
+                tasks.Add(SendMessageToClient(client, batchMessage));
+            }
+            else
+            {
+                _logger.LogWarning($"사용자 {userId}의 클라이언트를 찾을 수 없음 또는 스트림이 null");
+            }
+        }
+
+        _logger.LogInformation($"총 {tasks.Count}개의 클라이언트에게 배치 브로드캐스트 (메시지 {messagesToSend.Count}개)");
         await Task.WhenAll(tasks);
     }
 

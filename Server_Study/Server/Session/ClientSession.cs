@@ -2,6 +2,7 @@
 using System.Net;
 using GamePackets;
 using ServerCore;
+using Server_Study.Modules.GamePlay.Room;
 
 namespace Server_Study;
 
@@ -30,11 +31,11 @@ public class ClientSession : CustomPacketSession
         
         // UserManager에도 등록 (TCP 세션용 임시 사용자 ID 생성)
         string tempUserId = $"tcp_user_{SessionId}";
-        Server_Study.Managers.UserManager.Instance.AuthenticateUser(tempUserId, $"Player{SessionId}");
-        Server_Study.Managers.UserManager.Instance.JoinRoom(tempUserId, "default_room");
+        Server_Study.Shared.Utils.UserManager.Instance.AuthenticateUser(tempUserId, $"Player{SessionId}");
+        Server_Study.Shared.Utils.UserManager.Instance.JoinRoom(tempUserId, "default_room");
         
         // UserManager와 TCP 세션 연결
-        var userInfo = Server_Study.Managers.UserManager.Instance.GetUserInfo(tempUserId);
+        var userInfo = Server_Study.Shared.Utils.UserManager.Instance.GetUserInfo(tempUserId);
         if (userInfo != null)
         {
             userInfo.TcpSession = this;
@@ -65,6 +66,10 @@ public class ClientSession : CustomPacketSession
             {
                 case PacketID.PlayerInfoReq:
                     HandlePlayerInfoReq(protobufData);
+                    break;
+                    
+                case PacketID.CChat:
+                    HandleCChat(protobufData);
                     break;
                     
                 case PacketID.SChat:
@@ -106,6 +111,24 @@ public class ClientSession : CustomPacketSession
         }
     }
     
+    private void HandleCChat(ArraySegment<byte> data)
+    {
+        try
+        {
+            C_Chat cChat = C_Chat.Parser.ParseFrom(data.Array, data.Offset, data.Count);
+            Console.WriteLine($"[SUCCESS] C_Chat 수신!");
+            Console.WriteLine($"SessionID: {SessionId}");
+            Console.WriteLine($"Message: {cChat.Message}");
+            
+            // 채팅을 방의 다른 플레이어들에게 브로드캐스트 (JobQueue 사용)
+            Room?.Broadcast(this, cChat.Message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] C_Chat 파싱 실패: {ex.Message}");
+        }
+    }
+    
     private void HandleSChat(ArraySegment<byte> data)
     {
         try
@@ -140,8 +163,8 @@ public class ClientSession : CustomPacketSession
 
         // UserManager에서도 제거
         string tempUserId = $"tcp_user_{SessionId}";
-        Server_Study.Managers.UserManager.Instance.LeaveRoom(tempUserId, "default_room");
-        Server_Study.Managers.UserManager.Instance.LogoutUser(tempUserId);
+        Server_Study.Shared.Utils.UserManager.Instance.LeaveRoom(tempUserId, "default_room");
+        Server_Study.Shared.Utils.UserManager.Instance.LogoutUser(tempUserId);
 
         Console.WriteLine($"OnDisconnected : {endPoint}");
     }
