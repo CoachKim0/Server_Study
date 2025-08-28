@@ -2,8 +2,12 @@
 using System.Text;
 using Server_Study;
 using ServerCore;
-
-
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Server.Grpc.Services;
+using Server.Grpc;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
 
 /// <summary>
 /// 게임 서버의 메인 프로그램 클래스
@@ -15,40 +19,61 @@ class Program
     /// 클라이언트 연결을 수락하는 리스너 인스턴스
     /// </summary>
     static Listener listener = new Listener();
+    
+    public static GameRoom room = new GameRoom();
 
     /// <summary>
     /// 프로그램의 진입점
     /// 서버를 초기화하고 클라이언트 연결을 대기
     /// </summary>
     /// <param name="args">명령행 인수</param>
-    static void Main(string[] args)
+    static async Task Main(string[] args)
     {
-        // 현재 컴퓨터의 호스트명 가져오기
-        string host = Dns.GetHostName();
+        // gRPC 서버 설정
+        var builder = WebApplication.CreateBuilder(args);
         
-        // 호스트의 IP 정보 조회
-        IPHostEntry ipHost = Dns.GetHostEntry(host);
+        // gRPC 서비스 추가
+        builder.Services.AddGrpc();
         
-        // 첫 번째 IP 주소 사용 (일반적으로 로컬 IP)
-        IPAddress ipAddr = ipHost.AddressList[0];
-        
-        // 서버 바인딩용 엔드포인트 생성 (포트 7777 사용)
-        IPEndPoint endPoint = new IPEndPoint(ipAddr, 7777);
-
-        // 리스너 초기화: 지정된 엔드포인트에서 연결 대기
-        // 클라이언트 연결 시 GameSession 인스턴스를 생성하는 팩토리 함수 제공
-        listener.Init(
-            endPoint,
-            () => { return new ClientSession(); }
-        );
-
-        Console.WriteLine("Listening...");
-        
-        // 서버를 계속 실행 상태로 유지 (무한 루프)
-        while (true)
+        // Kestrel 서버 설정 - gRPC용 포트 5554
+        builder.WebHost.ConfigureKestrel(serverOptions =>
         {
-            // 메인 스레드는 대기 상태 유지
-            // 실제 클라이언트 처리는 백그라운드 스레드에서 수행
+            serverOptions.ListenAnyIP(5554, listenOptions =>
+            {
+                listenOptions.Protocols = HttpProtocols.Http2;
+            });
+        });
+
+        var app = builder.Build();
+        app.MapGrpcService<GameGrpcService>();
+        app.MapGrpcService<ChatServiceImpl>();
+
+        // gRPC 서버를 백그라운드에서 실행
+        var grpcServerTask = Task.Run(() => app.RunAsync());
+        
+        Console.WriteLine("gRPC 서버 시작됨 (포트: 5554)");
+
+        // 기존 소켓 서버 초기화 (포트 7777)
+        string host = Dns.GetHostName();
+        IPHostEntry ipHost = Dns.GetHostEntry(host);
+        IPAddress ipAddr = ipHost.AddressList[0];
+        IPEndPoint endPoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 7777);
+
+        try
+        {
+            listener.Init(endPoint, () => { return Session_Manager.Instance.Generate(); });
+            Console.WriteLine("소켓 서버 초기화 성공! (포트: 7777)");
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"소켓 서버 초기화 실패: {ex.Message}");
+        }
+
+        Console.WriteLine("두 서버 모두 실행 중...");
+        Console.WriteLine("- 소켓 서버: 포트 7777");
+        Console.WriteLine("- gRPC 서버: 포트 5554");
+        
+        // 서버를 계속 실행 상태로 유지
+        await Task.Delay(-1);
     }
 }

@@ -10,11 +10,16 @@
     <ItemGroup>
       <PackageReference Include="Google.Protobuf" Version="3.32.0" />
       <PackageReference Include="Google.Protobuf.Tools" Version="3.32.0" />
+      <PackageReference Include="Grpc.Tools" Version="2.60.0" PrivateAssets="All" />
+      <PackageReference Include="Grpc.Net.Client" Version="2.60.0" />
+      <PackageReference Include="Grpc.Core.Api" Version="2.60.0" />
     </ItemGroup>
 
     <!-- Protobuf 파일들을 자동으로 컴파일하도록 설정 -->
     <ItemGroup>
-      <Protobuf Include="Protos\*.proto" GrpcServices="None" CompileOutputs="false" />
+      <Protobuf Include="Protos\gamepacket.proto" GrpcServices="None" CompileOutputs="false" />
+      <Protobuf Include="Protos\common.proto" GrpcServices="None" CompileOutputs="false" />
+      <Protobuf Include="Protos\grpc_service.proto" GrpcServices="Both" CompileOutputs="false" />
     </ItemGroup>
     <ItemGroup>
       <Folder Include="Packets\" />
@@ -22,7 +27,9 @@
     
     <!-- 빌드 전에 protoc 수동 실행 -->
     <Target Name="CompileProtoFiles" BeforeTargets="BeforeCompile">
-      <Exec Command="&quot;$(PkgGoogle_Protobuf_Tools)\tools\windows_x64\protoc.exe&quot; --csharp_out=Packets --proto_path=Protos Protos\*.proto" 
+      <Exec Command="&quot;$(PkgGoogle_Protobuf_Tools)\tools\windows_x64\protoc.exe&quot; --csharp_out=Packets --proto_path=Protos Protos\gamepacket.proto Protos\common.proto" 
+            WorkingDirectory="$(ProjectDir)" />
+      <Exec Command="&quot;$(PkgGrpc_Tools)\tools\windows_x64\protoc.exe&quot; --csharp_out=Packets --grpc_out=Packets --plugin=protoc-gen-grpc=&quot;$(PkgGrpc_Tools)\tools\windows_x64\grpc_csharp_plugin.exe&quot; --proto_path=Protos Protos\grpc_service.proto" 
             WorkingDirectory="$(ProjectDir)" />
       <ItemGroup>
         <Compile Include="Packets\*.cs" />

@@ -242,118 +242,6 @@ public abstract class Session
     #endregion
 }
 
-public abstract class PacketSession : Session
-{
-    // [size][packet][msg..........][size][packet][msg..........]
-    public sealed override int OnRecv(ArraySegment<byte> buffer)
-    {
-        // 수신된 데이터의 hex 덤프 출력 (처음 32바이트만)
-        int dumpLength = Math.Min(32, buffer.Count);
-        var hexDump = BitConverter.ToString(buffer.Array, buffer.Offset, dumpLength);
-        Console.WriteLine($"[DEBUG] 수신 데이터 hex 덤프 ({buffer.Count} bytes): {hexDump}");
-        
-        int processLen = 0;
-        while (true)
-        {
-            // 최소한 헤더는 파싱할수 있는지 확인
-            if (buffer.Count < 2) break;
-
-            // 패킷이 완전체로 도착했는지 확인.
-            byte byte1 = buffer.Array[buffer.Offset];
-            byte byte2 = buffer.Array[buffer.Offset + 1];
-            ushort dataSize = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
-            Console.WriteLine($"[DEBUG] 원시 바이트: [0]={byte1:X2} [1]={byte2:X2}");
-            Console.WriteLine($"[DEBUG] BitConverter 결과: {dataSize} (0x{dataSize:X4})");
-            Console.WriteLine($"[DEBUG] Little Endian 계산: {(ushort)(byte1 | (byte2 << 8))}");
-            Console.WriteLine($"[DEBUG] 수신된 패킷 크기: {dataSize}, 버퍼 크기: {buffer.Count}");
-            
-            // 비정상적으로 큰 패킷 크기 검증 (최대 64KB로 제한)
-            if (dataSize > 65536 || dataSize < 4)
-            {
-                Console.WriteLine($"[ERROR] 비정상적인 패킷 크기: {dataSize}. 연결을 종료합니다.");
-                return -1; // 연결 종료를 위해 음수 반환
-            }
-            // 적다는 거는 부분적으로만 왔다는 의미
-            if (buffer.Count < dataSize)
-            {
-                Console.WriteLine($"[DEBUG] 패킷 불완전 - 대기 중 (필요: {dataSize}, 현재: {buffer.Count})");
-                break;
-            }
-
-
-            // 여기까지 왔으면 패킷 조립 가능.
-            Console.WriteLine($"[DEBUG] 패킷 완전 수신 - OnRecvPacket 호출");
-            OnRecvPacket(new ArraySegment<byte>(buffer.Array, buffer.Offset, dataSize));
-
-            processLen += dataSize;
-            buffer = new ArraySegment<byte>(buffer.Array, buffer.Offset + dataSize, buffer.Count - dataSize);
-        }
-
-        return processLen;
-    }
-
-    public abstract void OnRecvPacket(ArraySegment<byte> buffer);
-}
-
-/// <summary>
-/// 커스텀 패킷 형식 [size][packetId][protobuf_data]을 처리하는 세션
-/// 클라이언트가 사용하는 패킷 형식에 맞춰 처리
-/// </summary>
-public abstract class CustomPacketSession : Session
-{
-    public sealed override int OnRecv(ArraySegment<byte> buffer)
-    {
-        // 수신된 데이터의 hex 덤프 출력 (처음 32바이트만)
-        int dumpLength = Math.Min(32, buffer.Count);
-        var hexDump = BitConverter.ToString(buffer.Array, buffer.Offset, dumpLength);
-        Console.WriteLine($"[DEBUG] CustomPacket 수신 데이터 hex 덤프 ({buffer.Count} bytes): {hexDump}");
-        
-        int processLen = 0;
-        while (true)
-        {
-            // 최소한 헤더는 파싱할수 있는지 확인 (size: 2bytes + packetId: 2bytes = 4bytes)
-            if (buffer.Count < 4) break;
-
-            // 패킷 크기 읽기
-            ushort packetSize = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
-            Console.WriteLine($"[DEBUG] CustomPacket 크기: {packetSize}");
-            
-            // 패킷 크기 검증
-            if (packetSize > 65536 || packetSize < 4)
-            {
-                Console.WriteLine($"[ERROR] CustomPacket 비정상적인 패킷 크기: {packetSize}");
-                return -1;
-            }
-            
-            // 패킷이 완전히 도착했는지 확인
-            if (buffer.Count < packetSize)
-            {
-                Console.WriteLine($"[DEBUG] CustomPacket 불완전 - 대기 중 (필요: {packetSize}, 현재: {buffer.Count})");
-                break;
-            }
-
-            // PacketId 읽기
-            ushort packetId = BitConverter.ToUInt16(buffer.Array, buffer.Offset + 2);
-            Console.WriteLine($"[DEBUG] CustomPacket ID: {packetId}");
-            
-            // Protobuf 데이터 부분 추출 (size와 packetId 제외)
-            int protobufDataSize = packetSize - 4; // 전체 크기에서 헤더 4바이트 제외
-            ArraySegment<byte> protobufData = new ArraySegment<byte>(buffer.Array, buffer.Offset + 4, protobufDataSize);
-            
-            // 패킷 처리
-            Console.WriteLine($"[DEBUG] CustomPacket 완전 수신 - OnRecvPacket 호출 (ID: {packetId}, 데이터: {protobufDataSize} bytes)");
-            OnRecvPacket(packetId, protobufData);
-
-            processLen += packetSize;
-            buffer = new ArraySegment<byte>(buffer.Array, buffer.Offset + packetSize, buffer.Count - packetSize);
-        }
-
-        return processLen;
-    }
-
-    public abstract void OnRecvPacket(ushort packetId, ArraySegment<byte> protobufData);
-}
-
 /// <summary>
 /// 순수 Protobuf 데이터를 직접 처리하는 세션 (커스텀 헤더 없음)
 /// </summary>
@@ -374,4 +262,59 @@ public abstract class ProtobufPacketSession : Session
     }
 
     public abstract void OnRecvProtobuf(ArraySegment<byte> protobufData);
+}
+
+/// <summary>
+/// 커스텀 패킷 형식 [PacketID][Protobuf데이터]를 처리하는 세션
+/// 클라이언트가 PacketID + Protobuf 형식으로 전송하는 패킷을 처리
+/// </summary>
+public abstract class CustomPacketSession : Session
+{
+    public sealed override int OnRecv(ArraySegment<byte> buffer)
+    {
+        // 수신된 데이터의 hex 덤프 출력
+        int dumpLength = Math.Min(32, buffer.Count);
+        var hexDump = BitConverter.ToString(buffer.Array, buffer.Offset, dumpLength);
+        Console.WriteLine($"[DEBUG] CustomPacket 수신 데이터 hex 덤프 ({buffer.Count} bytes): {hexDump}");
+        
+        int processLen = 0;
+        while (true)
+        {
+            // 최소한 PacketID는 파싱할 수 있는지 확인 (2바이트)
+            if (buffer.Count < 2) break;
+
+            // PacketID 읽기 (Little Endian)
+            ushort packetId = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
+            Console.WriteLine($"[DEBUG] CustomPacket ID: {packetId}");
+            
+            // 패킷 ID 검증 (필요시)
+            if (packetId > 1000) // 비정상적으로 큰 PacketID
+            {
+                Console.WriteLine($"[ERROR] CustomPacket 비정상적인 PacketID: {packetId}");
+                return -1;
+            }
+            
+            // Protobuf 데이터 부분 추출 (PacketID 2바이트 제외)
+            int protobufDataSize = buffer.Count - 2;
+            if (protobufDataSize < 0)
+            {
+                Console.WriteLine($"[ERROR] CustomPacket Protobuf 데이터 크기 음수: {protobufDataSize}");
+                break;
+            }
+            
+            ArraySegment<byte> protobufData = new ArraySegment<byte>(buffer.Array, buffer.Offset + 2, protobufDataSize);
+            
+            // 패킷 처리
+            Console.WriteLine($"[DEBUG] CustomPacket 처리 - PacketID: {packetId}, Protobuf 데이터: {protobufDataSize} bytes");
+            OnRecvPacket(packetId, protobufData);
+
+            // 전체 데이터를 처리했다고 반환 (한 번에 하나의 패킷만 처리)
+            processLen = buffer.Count;
+            break;
+        }
+
+        return processLen;
+    }
+
+    public abstract void OnRecvPacket(ushort packetId, ArraySegment<byte> protobufData);
 }

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+// C# 네임스페이스 지정
+option csharp_namespace = "GamePackets";
+
+// 게임에서 사용할 패킷들을 정의합니다
+
+// 패킷 ID 정의 (클라이언트/서버 공유)
+enum PacketID {
+    UNKNOWN = 0;           // proto3에서는 반드시 0부터 시작
+    PLAYER_INFO_REQ = 1;
+    PLAYER_INFO_RES = 2;
+    C_CHAT = 3 ;
+    S_CHAT = 4;
+}
+
+

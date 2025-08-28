@@ -1,0 +1,134 @@
+﻿using System.Buffers.Binary;
+using System.Net;
+using GamePackets;
+using ServerCore;
+
+namespace Server_Study;
+
+/// <summary>
+/// 게임 클라이언트와의 세션을 처리하는 구체적인 세션 클래스
+/// Session 추상 클래스를 상속받아 게임 로직에 맞는 네트워크 처리를 구현
+/// </summary>
+public class ClientSession : CustomPacketSession
+{
+    public int SessionId;
+    public GameRoom Room { get; set; }
+
+
+    /// <summary>
+    /// 클라이언트가 서버에 연결되었을 때 호출되는 메서드
+    /// 연결된 클라이언트에게 초기 게임 데이터(기사 정보)를 전송
+    /// </summary>
+    /// <param name="endPoint">연결된 클라이언트의 엔드포인트 정보</param>
+    public override void OnConnected(EndPoint endPoint)
+    {
+        Console.WriteLine($"OnConnected : {endPoint}");
+        
+        // 자동으로 기본 게임방에 입장
+        Program.room.Enter(this);
+        
+        // UserManager에도 등록 (TCP 세션용 임시 사용자 ID 생성)
+        string tempUserId = $"tcp_user_{SessionId}";
+        Server_Study.Managers.UserManager.Instance.AuthenticateUser(tempUserId, $"Player{SessionId}");
+        Server_Study.Managers.UserManager.Instance.JoinRoom(tempUserId, "default_room");
+        
+        // UserManager와 TCP 세션 연결
+        var userInfo = Server_Study.Managers.UserManager.Instance.GetUserInfo(tempUserId);
+        if (userInfo != null)
+        {
+            userInfo.TcpSession = this;
+        }
+    }
+
+    public override void OnRecvPacket(ushort packetId, ArraySegment<byte> protobufData)
+    {
+        Console.WriteLine($"[DEBUG] 패킷 처리 시작: PacketID={packetId}, 데이터 크기={protobufData.Count}");
+
+        switch ((PacketID)packetId)
+        {
+            case PacketID.PlayerInfoReq:
+                HandlePlayerInfoReq(protobufData);
+                break;
+                
+            case PacketID.SChat:
+                HandleSChat(protobufData);
+                break;
+                
+            default:
+                Console.WriteLine($"[WARNING] 알 수 없는 패킷 ID: {packetId}");
+                break;
+        }
+    }
+    
+    private void HandlePlayerInfoReq(ArraySegment<byte> data)
+    {
+        try
+        {
+            PlayerInfoReq p = PlayerInfoReq.Parser.ParseFrom(data.Array, data.Offset, data.Count);
+            Console.WriteLine($"[SUCCESS] PlayerInfoReq 파싱 성공!");
+            Console.WriteLine($"PlayerId: {p.PlayerId}");
+            Console.WriteLine($"Name: {p.Name}");
+
+            // skill 정보 출력
+            Console.WriteLine($"Skills 개수: {p.Skills.Count}");
+            foreach (var skill in p.Skills)
+            {
+                Console.WriteLine($"  Skill: ID={skill.Id}, Level={skill.Level}, Duration={skill.Duration}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] PlayerInfoReq 파싱 실패: {ex.Message}");
+        }
+    }
+    
+    private void HandleSChat(ArraySegment<byte> data)
+    {
+        try
+        {
+            S_Chat sChat = S_Chat.Parser.ParseFrom(data.Array, data.Offset, data.Count);
+            Console.WriteLine($"[SUCCESS] S_Chat 수신!");
+            Console.WriteLine($"PlayerId: {sChat.Playerid}");
+            Console.WriteLine($"Message: {sChat.Mesage}");
+            
+            // 채팅을 방의 다른 플레이어들에게 브로드캐스트할 수도 있음
+            // Room?.Broadcast(sChat, this);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] S_Chat 파싱 실패: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 클라이언트와의 연결이 종료되었을 때 호출되는 메서드
+    /// 연결 종료 후 정리 작업을 수행
+    /// </summary>
+    /// <param name="endPoint">연결이 종료된 클라이언트의 엔드포인트 정보</param>
+    public override void OnDisconnected(EndPoint endPoint)
+    {
+        Session_Manager.Instance.Remove(this);
+        if (Room != null)
+        {
+            Room.Leave(this);
+            Room = null;
+        }
+
+        // UserManager에서도 제거
+        string tempUserId = $"tcp_user_{SessionId}";
+        Server_Study.Managers.UserManager.Instance.LeaveRoom(tempUserId, "default_room");
+        Server_Study.Managers.UserManager.Instance.LogoutUser(tempUserId);
+
+        Console.WriteLine($"OnDisconnected : {endPoint}");
+    }
+
+    /// <summary>
+    /// 클라이언트로 데이터 전송이 완료되었을 때 호출되는 메서드
+    /// 전송된 바이트 수를 로그로 출력
+    /// </summary>
+    /// <param name="numOfBytes">전송된 바이트 수</param>
+    public override void OnSend(int numOfBytes)
+    {
+        Console.WriteLine($"Transferred bytes : {numOfBytes}");
+    }
+}

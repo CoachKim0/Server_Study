@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient/**)",
+      "Read(/C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient/**)",
+      "Read(/C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient/**)",
+      "Read(/C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient/**)",
+      "Read(/C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient/**)",
+      "Read(/C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient/**)",
+      "Bash(dotnet clean:*)",
+      "Bash(dotnet build)",
+      "Bash(copy:*)",
+      "Bash(dotnet run:*)",
+      "Bash(xcopy:*)",
+      "Bash(dotnet build:*)",
+      "Bash(powershell:*)",
+      "Bash(dir)",
+      "Bash(git checkout:*)",
+      "Bash(git clean:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\WORK\\Git\\0_ServerStudy\\DumyClient\\DumyClient",
+      "C:\\c\\WORK\\Git\\0_ServerStudy\\DumyClient"
+    ]
+  }
+}

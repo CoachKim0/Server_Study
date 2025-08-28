@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option csharp_namespace = "DummyClient.gRPC";
+
+package chat;
+
+// 채팅 서비스 정의
+service ChatService {
+  rpc StreamChat(stream ChatMessage) returns (stream ChatMessage);
+}
+
+// 채팅 메시지
+message ChatMessage {
+  string user_id = 1;
+  string room_id = 2;
+  string content = 3;
+  int64 timestamp = 4;
+  MessageType type = 5;
+}
+
+// 메시지 타입
+enum MessageType {
+  CHAT = 0;
+  JOIN = 1;
+  LEAVE = 2;
+  SYSTEM = 3;
+}

@@ -9,8 +9,18 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="Grpc.Net.Client" Version="2.60.0" />
+      <PackageReference Include="Google.Protobuf" Version="3.32.0" />
+      <PackageReference Include="Grpc.Tools" Version="2.60.0" PrivateAssets="All" />
+    </ItemGroup>
+
+    <ItemGroup>
       <ProjectReference Include="..\..\Server_Study\Core\Core.csproj" />
       <ProjectReference Include="..\..\Server_Study\PacketGenerator\PacketGenerator.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Protobuf Include="gRPC\Protos\chat_service.proto" GrpcServices="Client" />
     </ItemGroup>
 
 </Project>
