@@ -32,7 +32,7 @@ public class RecvBuffer
     /// </summary>
     public ArraySegment<byte> ReadSegment
     {
-        get { return new ArraySegment<byte>(buffer.Array, buffer.Offset + readPos, DataSize); }
+        get { return new ArraySegment<byte>(buffer.Array!, buffer.Offset + readPos, DataSize); }
     }
 
     /// <summary>
@@ -40,7 +40,7 @@ public class RecvBuffer
     /// </summary>
     public ArraySegment<byte> WriteSegment
     {
-        get { return new ArraySegment<byte>(buffer.Array, buffer.Offset + writePos, FreeSize); }
+        get { return new ArraySegment<byte>(buffer.Array!, buffer.Offset + writePos, FreeSize); }
     }
 
     /// <summary>
@@ -57,7 +57,7 @@ public class RecvBuffer
         else
         {
             // 남은 찌꺼기가 있으면 시작 위치로 복사
-            Array.Copy(buffer.Array, buffer.Offset + readPos, buffer.Array, buffer.Offset, dataSize);
+            Array.Copy(buffer.Array!, buffer.Offset + readPos, buffer.Array!, buffer.Offset, dataSize);
             readPos = 0;
             writePos = dataSize;
         }

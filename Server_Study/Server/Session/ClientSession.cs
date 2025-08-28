@@ -178,4 +178,93 @@ public class ClientSession : CustomPacketSession
     {
         Console.WriteLine($"Transferred bytes : {numOfBytes}");
     }
+
+    public override void OnRecvJsonPacket(string jsonData)
+    {
+        Console.WriteLine($"[DEBUG] JSON 패킷 수신: {jsonData}");
+        
+        // JobQueue를 사용하여 JSON 패킷 처리를 별도 스레드에서 수행
+        _packetJobQueue.Push(() => {
+            ProcessJsonPacket(jsonData);
+        });
+    }
+
+    private void ProcessJsonPacket(string jsonData)
+    {
+        try
+        {
+            // 간단한 JSON 파싱 (System.Text.Json 사용)
+            using (var document = System.Text.Json.JsonDocument.Parse(jsonData))
+            {
+                var root = document.RootElement;
+                
+                if (root.TryGetProperty("Type", out var typeElement))
+                {
+                    string messageType = typeElement.GetString() ?? "";
+                    Console.WriteLine($"[DEBUG] JSON 메시지 타입: {messageType}");
+                    
+                    switch (messageType)
+                    {
+                        case "JoinRoom":
+                            if (root.TryGetProperty("RoomId", out var roomIdElement))
+                            {
+                                string roomId = roomIdElement.GetString() ?? "";
+                                Console.WriteLine($"[SUCCESS] JoinRoom 요청 - RoomId: {roomId}");
+                                
+                                // 응답 JSON 생성 및 전송
+                                string response = $@"{{""Type"":""JoinRoomResponse"",""Success"":true,""RoomId"":""{roomId}""}}";
+                                SendJsonResponse(response);
+                            }
+                            break;
+                            
+                        case "LeaveRoom":
+                            if (root.TryGetProperty("RoomId", out var leaveRoomIdElement))
+                            {
+                                string roomId = leaveRoomIdElement.GetString() ?? "";
+                                Console.WriteLine($"[SUCCESS] LeaveRoom 요청 - RoomId: {roomId}");
+                                
+                                // 응답 JSON 생성 및 전송
+                                string response = $@"{{""Type"":""LeaveRoomResponse"",""Success"":true,""RoomId"":""{roomId}""}}";
+                                SendJsonResponse(response);
+                            }
+                            break;
+                            
+                        case "SendMessage":
+                            if (root.TryGetProperty("Message", out var messageElement))
+                            {
+                                string message = messageElement.GetString() ?? "";
+                                Console.WriteLine($"[SUCCESS] SendMessage 요청 - Message: {message}");
+                                
+                                // 방의 다른 플레이어들에게 메시지 브로드캐스트
+                                Room?.Broadcast(this, message);
+                            }
+                            break;
+                            
+                        default:
+                            Console.WriteLine($"[WARNING] 알 수 없는 JSON 메시지 타입: {messageType}");
+                            break;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] JSON 패킷 처리 중 오류: {ex.Message}");
+        }
+    }
+
+    private void SendJsonResponse(string jsonResponse)
+    {
+        try
+        {
+            byte[] responseBytes = System.Text.Encoding.UTF8.GetBytes(jsonResponse);
+            ArraySegment<byte> responseSegment = new ArraySegment<byte>(responseBytes);
+            Send(responseSegment);
+            Console.WriteLine($"[DEBUG] JSON 응답 전송: {jsonResponse}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] JSON 응답 전송 중 오류: {ex.Message}");
+        }
+    }
 }

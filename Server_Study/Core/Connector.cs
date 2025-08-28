@@ -14,7 +14,7 @@ public class Connector
     /// 세션을 생성하는 팩토리 함수
     /// 연결 성공 시 새로운 세션 인스턴스를 생성하기 위해 사용
     /// </summary>
-    Func<Session> sessionFactory;
+    Func<Session>? sessionFactory;
 
     /// <summary>
     /// 지정된 엔드포인트로 비동기 연결을 시작
@@ -45,7 +45,7 @@ public class Connector
     void RegisterConnect(SocketAsyncEventArgs args)
     {
         // UserToken에서 소켓 추출 (안전한 캐스팅)
-        Socket socket = args.UserToken as Socket;
+        Socket? socket = args.UserToken as Socket;
         if (socket == null) 
             return;
         
@@ -53,7 +53,7 @@ public class Connector
         bool pending = socket.ConnectAsync(args);
         // 연결이 즉시 완료된 경우 직접 완료 처리
         if (pending == false)
-            OnConnectComplete(null, args);
+            OnConnectComplete(null!, args);
     }
 
     /// <summary>
@@ -62,14 +62,14 @@ public class Connector
     /// </summary>
     /// <param name="sender">이벤트 발생자 (null일 수 있음)</param>
     /// <param name="args">연결 결과 정보가 담긴 이벤트 인수</param>
-    void OnConnectComplete(object sender, SocketAsyncEventArgs args)
+    void OnConnectComplete(object? sender, SocketAsyncEventArgs args)
     {
         if (args.SocketError == SocketError.Success)
         {
             // 연결 성공: 새 세션 생성 및 시작
-            Session session = sessionFactory.Invoke();
-            session.Start(args.ConnectSocket);
-            session.OnConnected(args.RemoteEndPoint);
+            Session session = sessionFactory!.Invoke();
+            session.Start(args.ConnectSocket!);
+            session.OnConnected(args.RemoteEndPoint!);
         }
         else
         {

@@ -12,7 +12,7 @@ namespace ServerCore
         /// <summary>
         /// 각 스레드별 전용 버퍼를 반환하는 TLS 변수
         /// </summary>
-        public static ThreadLocal<SendBuffer> CurrentBuffer = new ThreadLocal<SendBuffer>(() => { return null; });
+        public static ThreadLocal<SendBuffer?> CurrentBuffer = new ThreadLocal<SendBuffer?>(() => null);
         
         /// <summary>
         /// 버퍼 청크 크기 (기본값: 8KB로 증가)
@@ -44,7 +44,7 @@ namespace ServerCore
         /// <returns>실제 데이터가 담긴 버퍼 세그먼트</returns>
         public static ArraySegment<byte> Close(int useSize)
         {
-            return CurrentBuffer.Value.Close(useSize);
+            return CurrentBuffer.Value!.Close(useSize);
         }
     }
 
@@ -92,7 +92,7 @@ namespace ServerCore
         public ArraySegment<byte> Open(int reserveSize)
         {
             if (reserveSize > FreeSize)
-                return null;
+                return new ArraySegment<byte>();
 
             return new ArraySegment<byte>(buffer, useSize, reserveSize);
         }

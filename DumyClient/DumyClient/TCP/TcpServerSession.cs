@@ -58,4 +58,9 @@ public class ServerSession : Session
     {
         Console.WriteLine($"Transferred bytes : {numOfBytes}");
     }
+
+    public override void OnRecvJsonPacket(string jsonData)
+    {
+        Console.WriteLine($"[From Server JSON] {jsonData}");
+    }
 }

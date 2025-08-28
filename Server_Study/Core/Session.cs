@@ -14,7 +14,7 @@ public abstract class Session
     /// <summary>
     /// 클라이언트와의 통신에 사용되는 TCP 소켓
     /// </summary>
-    Socket socket;
+    Socket? socket;
 
     /// <summary>
     /// 연결 끊기 상태를 나타내는 플래그 (0: 연결됨, 1: 끊어짐)
@@ -81,6 +81,13 @@ public abstract class Session
     /// <param name="endPoint">연결이 종료된 클라이언트의 엔드포인트 정보</param>
     public abstract void OnDisconnected(EndPoint endPoint);
 
+    /// <summary>
+    /// JSON 형태의 데이터를 수신했을 때 호출되는 콜백 함수
+    /// 하위 클래스에서 JSON 패킷 처리 로직을 구현
+    /// </summary>
+    /// <param name="jsonData">수신된 JSON 문자열</param>
+    public abstract void OnRecvJsonPacket(string jsonData);
+
 
     /// <summary>
     /// 세션을 시작하고 수신 대기 상태로 전환
@@ -91,8 +98,8 @@ public abstract class Session
     {
         this.socket = socket;
         // 비동기 수신/송신 이벤트 핸들러 등록
-        recvArgs.Completed += new EventHandler<SocketAsyncEventArgs>(OnRecvCompleted);
-        sendArgs.Completed += new EventHandler<SocketAsyncEventArgs>(OnSendCompleted);
+        recvArgs.Completed += OnRecvCompleted;
+        sendArgs.Completed += OnSendCompleted;
 
         // 수신 대기 시작
         RegisterRecv();
@@ -121,10 +128,10 @@ public abstract class Session
 
     public void Disconnect()
     {
-        if (Interlocked.Exchange(ref _disconnect, 1) == 1) ;
-        return;
+        if (Interlocked.Exchange(ref _disconnect, 1) == 1)
+            return;
 
-        OnDisconnected(socket.RemoteEndPoint);
+        OnDisconnected(socket!.RemoteEndPoint!);
         socket.Shutdown(SocketShutdown.Both);
         socket.Close();
     }
@@ -145,12 +152,12 @@ public abstract class Session
 
         sendArgs.BufferList = pendingList;
 
-        bool pending = socket.SendAsync(sendArgs);
+        bool pending = socket!.SendAsync(sendArgs);
         if (pending == false)
-            OnSendCompleted(null, sendArgs);
+            OnSendCompleted(null!, sendArgs);
     }
 
-    void OnSendCompleted(object sender, SocketAsyncEventArgs args)
+    void OnSendCompleted(object? sender, SocketAsyncEventArgs args)
     {
         lock (_lock)
         {
@@ -189,12 +196,12 @@ public abstract class Session
         recvArgs.SetBuffer(segment.Array, segment.Offset, segment.Count);
 
 
-        bool pending = socket.ReceiveAsync(recvArgs);
+        bool pending = socket!.ReceiveAsync(recvArgs);
         if (pending == false) // 바로 성공했을 경우
-            OnRecvCompleted(null, recvArgs);
+            OnRecvCompleted(null!, recvArgs);
     }
 
-    void OnRecvCompleted(object sender, SocketAsyncEventArgs args)
+    void OnRecvCompleted(object? sender, SocketAsyncEventArgs args)
     {
         //args.BytesTransferred 몇 바이트를 받았느냐??
         if (args.BytesTransferred > 0 && args.SocketError == SocketError.Success)
@@ -251,7 +258,7 @@ public abstract class ProtobufPacketSession : Session
     {
         // 수신된 데이터의 hex 덤프 출력
         int dumpLength = Math.Min(32, buffer.Count);
-        var hexDump = BitConverter.ToString(buffer.Array, buffer.Offset, dumpLength);
+        var hexDump = BitConverter.ToString(buffer.Array!, buffer.Offset, dumpLength);
         Console.WriteLine($"[DEBUG] ProtobufPacket 수신 데이터 hex 덤프 ({buffer.Count} bytes): {hexDump}");
         
         // 전체 버퍼를 Protobuf 데이터로 처리
@@ -262,6 +269,12 @@ public abstract class ProtobufPacketSession : Session
     }
 
     public abstract void OnRecvProtobuf(ArraySegment<byte> protobufData);
+    
+    public override void OnRecvJsonPacket(string jsonData)
+    {
+        Console.WriteLine($"[INFO] ProtobufPacketSession에서 JSON 패킷 수신: {jsonData}");
+        // 기본적으로 JSON 패킷은 처리하지 않음 (필요시 하위 클래스에서 오버라이드)
+    }
 }
 
 /// <summary>
@@ -274,17 +287,34 @@ public abstract class CustomPacketSession : Session
     {
         // 수신된 데이터의 hex 덤프 출력
         int dumpLength = Math.Min(32, buffer.Count);
-        var hexDump = BitConverter.ToString(buffer.Array, buffer.Offset, dumpLength);
+        var hexDump = BitConverter.ToString(buffer.Array!, buffer.Offset, dumpLength);
         Console.WriteLine($"[DEBUG] CustomPacket 수신 데이터 hex 덤프 ({buffer.Count} bytes): {hexDump}");
         
         int processLen = 0;
         while (true)
         {
+            // 최소 데이터 크기 확인
+            if (buffer.Count < 1) break;
+
+            // JSON 데이터인지 확인 ('{' 문자로 시작)
+            if (buffer.Array![buffer.Offset] == 0x7B) // '{'
+            {
+                // JSON 데이터 처리
+                string jsonString = System.Text.Encoding.UTF8.GetString(buffer.Array, buffer.Offset, buffer.Count);
+                Console.WriteLine($"[DEBUG] JSON 데이터 수신: {jsonString}");
+                
+                // JSON 데이터를 처리하고 전체 버퍼 소비
+                OnRecvJsonPacket(jsonString);
+                processLen = buffer.Count;
+                break;
+            }
+            
+            // 기존 바이너리 패킷 처리
             // 최소한 PacketID는 파싱할 수 있는지 확인 (2바이트)
             if (buffer.Count < 2) break;
 
             // PacketID 읽기 (Little Endian)
-            ushort packetId = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
+            ushort packetId = BitConverter.ToUInt16(buffer.Array!, buffer.Offset);
             Console.WriteLine($"[DEBUG] CustomPacket ID: {packetId}");
             
             // 패킷 ID 검증 (필요시)
@@ -317,4 +347,5 @@ public abstract class CustomPacketSession : Session
     }
 
     public abstract void OnRecvPacket(ushort packetId, ArraySegment<byte> protobufData);
+    public abstract override void OnRecvJsonPacket(string jsonData);
 }

@@ -54,9 +54,7 @@ namespace ServerCore
         {
             while (true)
             {
-                IJob job = null;
-                
-                if (_jobQueue.TryDequeue(out job))
+                if (_jobQueue.TryDequeue(out IJob? job))
                 {
                     try
                     {
@@ -88,7 +86,7 @@ namespace ServerCore
     // 전역 JobQueue 매니저 (싱글톤)
     public class JobQueueManager
     {
-        private static JobQueueManager _instance = null;
+        private static JobQueueManager? _instance = null;
         private static readonly object _instanceLock = new object();
         
         private readonly Dictionary<string, JobQueue> _jobQueues = new Dictionary<string, JobQueue>();

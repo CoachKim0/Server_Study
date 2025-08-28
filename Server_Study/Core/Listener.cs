@@ -13,12 +13,12 @@ public class Listener
     /// <summary>
     /// 클라이언트 연결을 대기하는 서버 소켓
     /// </summary>
-    Socket _listenSocket;
+    Socket? _listenSocket;
     
     /// <summary>
     /// 클라이언트 연결 시 새로운 세션을 생성하는 팩토리 함수
     /// </summary>
-    Func<Session> sessionFactory;
+    Func<Session>? sessionFactory;
 
 
     /// <summary>
@@ -40,7 +40,7 @@ public class Listener
 
         // 비동기 Accept를 위한 이벤트 설정
         SocketAsyncEventArgs args = new SocketAsyncEventArgs();
-        args.Completed += new EventHandler<SocketAsyncEventArgs>(OnAcceptComplete);
+        args.Completed += OnAcceptComplete;
         RegisterAccept(args);
     }
 
@@ -54,11 +54,11 @@ public class Listener
         args.AcceptSocket = null;
         
         // 비동기 Accept 시작
-        bool pending = _listenSocket.AcceptAsync(args);
+        bool pending = _listenSocket!.AcceptAsync(args);
         
         // 즉시 연결이 완료된 경우 직접 완료 처리
         if (pending == false)
-            OnAcceptComplete(null, args);
+            OnAcceptComplete(null!, args);
     }
 
 
@@ -68,14 +68,14 @@ public class Listener
     /// </summary>
     /// <param name="sender">이벤트 발생자 (null일 수 있음)</param>
     /// <param name="args">Accept 결과 정보가 담긴 이벤트 인수</param>
-    void OnAcceptComplete(object sender, SocketAsyncEventArgs args)
+    void OnAcceptComplete(object? sender, SocketAsyncEventArgs args)
     {
         if (args.SocketError == SocketError.Success)
         {
             // 연결 성공: 새 세션 생성 및 시작
-            Session session = sessionFactory.Invoke();
-            session.Start(args.AcceptSocket);
-            session.OnConnected(args.AcceptSocket.RemoteEndPoint);
+            Session session = sessionFactory!.Invoke();
+            session.Start(args.AcceptSocket!);
+            session.OnConnected(args.AcceptSocket!.RemoteEndPoint!);
         }
         else
         {

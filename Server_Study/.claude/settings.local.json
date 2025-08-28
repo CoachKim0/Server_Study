@@ -17,6 +17,8 @@
       "Bash(dir)",
       "Bash(git checkout:*)",
       "Bash(git clean:*)",
+      "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)",
+      "Bash(taskkill:*)",
       "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)"
     ],
     "deny": [],
