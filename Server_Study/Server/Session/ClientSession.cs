@@ -13,6 +13,7 @@ public class ClientSession : CustomPacketSession
 {
     public int SessionId;
     public GameRoom Room { get; set; }
+    private JobQueue _packetJobQueue = new JobQueue();
 
 
     /// <summary>
@@ -42,22 +43,45 @@ public class ClientSession : CustomPacketSession
 
     public override void OnRecvPacket(ushort packetId, ArraySegment<byte> protobufData)
     {
-        Console.WriteLine($"[DEBUG] 패킷 처리 시작: PacketID={packetId}, 데이터 크기={protobufData.Count}");
+        Console.WriteLine($"[DEBUG] 패킷 수신: PacketID={packetId}, 데이터 크기={protobufData.Count}");
 
-        switch ((PacketID)packetId)
+        // 패킷 데이터를 복사하여 JobQueue로 전달 (원본 버퍼가 재사용될 수 있으므로)
+        byte[] packetData = new byte[protobufData.Count];
+        Array.Copy(protobufData.Array, protobufData.Offset, packetData, 0, protobufData.Count);
+        
+        // JobQueue를 사용하여 패킷 처리를 별도 스레드에서 수행
+        _packetJobQueue.Push(() => {
+            ProcessPacket(packetId, new ArraySegment<byte>(packetData));
+        });
+    }
+
+    private void ProcessPacket(ushort packetId, ArraySegment<byte> protobufData)
+    {
+        Console.WriteLine($"[DEBUG] 패킷 처리 시작: PacketID={packetId}, SessionID={SessionId}");
+
+        try
         {
-            case PacketID.PlayerInfoReq:
-                HandlePlayerInfoReq(protobufData);
-                break;
-                
-            case PacketID.SChat:
-                HandleSChat(protobufData);
-                break;
-                
-            default:
-                Console.WriteLine($"[WARNING] 알 수 없는 패킷 ID: {packetId}");
-                break;
+            switch ((PacketID)packetId)
+            {
+                case PacketID.PlayerInfoReq:
+                    HandlePlayerInfoReq(protobufData);
+                    break;
+                    
+                case PacketID.SChat:
+                    HandleSChat(protobufData);
+                    break;
+                    
+                default:
+                    Console.WriteLine($"[WARNING] 알 수 없는 패킷 ID: {packetId}");
+                    break;
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR] 패킷 처리 중 오류: {ex.Message}");
+        }
+        
+        Console.WriteLine($"[DEBUG] 패킷 처리 완료: PacketID={packetId}");
     }
     
     private void HandlePlayerInfoReq(ArraySegment<byte> data)
@@ -91,8 +115,8 @@ public class ClientSession : CustomPacketSession
             Console.WriteLine($"PlayerId: {sChat.Playerid}");
             Console.WriteLine($"Message: {sChat.Mesage}");
             
-            // 채팅을 방의 다른 플레이어들에게 브로드캐스트할 수도 있음
-            // Room?.Broadcast(sChat, this);
+            // 채팅을 방의 다른 플레이어들에게 브로드캐스트 (JobQueue 사용)
+            Room?.Broadcast(this, sChat.Mesage);
         }
         catch (Exception ex)
         {

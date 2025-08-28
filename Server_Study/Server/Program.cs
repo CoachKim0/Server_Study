@@ -53,6 +53,9 @@ class Program
         
         Console.WriteLine("gRPC 서버 시작됨 (포트: 5554)");
 
+        // JobQueue 성능 테스트 실행
+        JobQueuePerformanceTest.RunBenchmark();
+
         // 기존 소켓 서버 초기화 (포트 7777)
         string host = Dns.GetHostName();
         IPHostEntry ipHost = Dns.GetHostEntry(host);
@@ -72,6 +75,25 @@ class Program
         Console.WriteLine("두 서버 모두 실행 중...");
         Console.WriteLine("- 소켓 서버: 포트 7777");
         Console.WriteLine("- gRPC 서버: 포트 5554");
+        
+        // JobQueue 통계 모니터링 시작
+        var monitoringTask = Task.Run(async () => {
+            while (true)
+            {
+                await Task.Delay(10000); // 10초마다 통계 출력
+                
+                var stats = ServerCore.JobQueueManager.Instance.GetQueueStats();
+                if (stats.Count > 0)
+                {
+                    Console.WriteLine("=== JobQueue 통계 ===");
+                    foreach (var stat in stats)
+                    {
+                        Console.WriteLine($"Queue '{stat.Key}': {stat.Value} jobs pending");
+                    }
+                    Console.WriteLine("=====================");
+                }
+            }
+        });
         
         // 서버를 계속 실행 상태로 유지
         await Task.Delay(-1);
