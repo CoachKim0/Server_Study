@@ -4,10 +4,15 @@ using ServerCore;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Grpc.Services;
 using Server_Study.Modules.Common.ChatBase;
+using Server_Study.Modules.Chat;
+using Server_Study.Modules.Auth;
+using Server_Study.Modules.Room;
+using Server_Study.Modules.Ping;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Server_Study.Modules.GamePlay.Room;
+using Server_Study.Services;
 
 /// <summary>
 /// 게임 서버의 메인 프로그램 클래스
@@ -34,6 +39,15 @@ class Program
         
         // gRPC 서비스 추가
         builder.Services.AddGrpc();
+        
+        // 핸들러들 등록
+        builder.Services.AddScoped<IChatHandler, DummyChatHandler>();
+        builder.Services.AddScoped<IAuthHandler, AuthHandler>();
+        builder.Services.AddScoped<IRoomHandler, RoomHandler>();
+        builder.Services.AddScoped<IPingHandler, PingHandler>();
+        
+        // BroadcastService 등록 (별도 서비스)
+        builder.Services.AddScoped<IBroadcastService, BroadcastService>();
         
         // Kestrel 서버 설정 - gRPC용 포트 5554
         builder.WebHost.ConfigureKestrel(serverOptions =>
