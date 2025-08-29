@@ -4,7 +4,6 @@ using ServerCore;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Grpc.Services;
 using Server_Study.Modules.Common.ChatBase;
-using Server_Study.Modules.Chat;
 using Server_Study.Modules.Auth;
 using Server_Study.Modules.Room;
 using Server_Study.Modules.Ping;
@@ -41,7 +40,6 @@ class Program
         builder.Services.AddGrpc();
         
         // 핸들러들 등록
-        builder.Services.AddScoped<IChatHandler, DummyChatHandler>();
         builder.Services.AddScoped<IAuthHandler, AuthHandler>();
         builder.Services.AddScoped<IRoomHandler, RoomHandler>();
         builder.Services.AddScoped<IPingHandler, PingHandler>();

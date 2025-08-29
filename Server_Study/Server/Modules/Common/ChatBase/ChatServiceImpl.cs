@@ -1,13 +1,21 @@
 using DummyClient.gRPC;
 using Grpc.Core;
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Server_Study.Modules.Common.ChatBase;
 
 public class ChatServiceImpl : ChatService.ChatServiceBase
 {
+    private readonly ILogger<ChatServiceImpl> _logger;
     private static readonly ConcurrentDictionary<string, HashSet<IServerStreamWriter<ChatMessage>>> _roomClients = new();
+    private static readonly ConcurrentDictionary<string, HashSet<IServerStreamWriter<ChatMessage>>> _lobbyClients = new();
     private static readonly ConcurrentDictionary<string, string> _clientRooms = new();
+    
+    public ChatServiceImpl(ILogger<ChatServiceImpl> logger)
+    {
+        _logger = logger;
+    }
     
     public override async Task StreamChat(
         IAsyncStreamReader<ChatMessage> requestStream,
@@ -15,7 +23,7 @@ public class ChatServiceImpl : ChatService.ChatServiceBase
         ServerCallContext context)
     {
         var clientId = context.Peer;
-        Console.WriteLine($"[gRPC Chat] 클라이언트 연결: {clientId}");
+        _logger.LogInformation($"[ChatService] 클라이언트 연결: {clientId}");
         
         try
         {
@@ -26,38 +34,164 @@ public class ChatServiceImpl : ChatService.ChatServiceBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[gRPC Chat] 클라이언트 {clientId} 오류: {ex.Message}");
+            _logger.LogError(ex, $"[ChatService] 클라이언트 {clientId} 오류");
         }
         finally
         {
-            await RemoveClientFromRoom(clientId);
-            Console.WriteLine($"[gRPC Chat] 클라이언트 연결 해제: {clientId}");
+            await RemoveClientFromAll(clientId, responseStream);
+            _logger.LogInformation($"[ChatService] 클라이언트 연결 해제: {clientId}");
         }
     }
     
     private async Task ProcessMessage(ChatMessage message, IServerStreamWriter<ChatMessage> responseStream, string clientId)
     {
-        switch (message.Type)
+        // 컨텍스트별 메시지 처리
+        switch (message.ChatContextCase)
         {
-            case MessageType.Join:
-                await HandleJoinRoom(message, responseStream, clientId);
+            case ChatMessage.ChatContextOneofCase.LobbyChat:
+                await HandleLobbyChat(message, responseStream, clientId);
                 break;
                 
-            case MessageType.Leave:
-                await HandleLeaveRoom(message, responseStream, clientId);
+            case ChatMessage.ChatContextOneofCase.RoomChat:
+                await HandleRoomChat(message, responseStream, clientId);
                 break;
                 
-            case MessageType.Chat:
-                await HandleChatMessage(message, clientId);
+            case ChatMessage.ChatContextOneofCase.TestChat:
+                await HandleTestChat(message, responseStream, clientId);
+                break;
+                
+            default:
+                _logger.LogWarning($"[ChatService] 알 수 없는 채팅 컨텍스트: {message.ChatContextCase}");
                 break;
         }
     }
     
-    private async Task HandleJoinRoom(ChatMessage message, IServerStreamWriter<ChatMessage> responseStream, string clientId)
+    // 로비 채팅 처리
+    private async Task HandleLobbyChat(ChatMessage message, IServerStreamWriter<ChatMessage> responseStream, string clientId)
     {
-        var roomId = message.RoomId;
-        var userId = message.UserId;
+        var lobbyChat = message.LobbyChat;
         
+        // 로비 클라이언트 목록에 추가 (채팅 발송을 위해)
+        _lobbyClients.AddOrUpdate("lobby", 
+            new HashSet<IServerStreamWriter<ChatMessage>> { responseStream },
+            (key, existing) => { existing.Add(responseStream); return existing; });
+        
+        _logger.LogInformation($"[LobbyChat] {message.UserId}: {lobbyChat.Content}");
+        
+        var responseMessage = new ChatMessage
+        {
+            UserId = message.UserId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            LobbyChat = new LobbyChatMessage
+            {
+                Content = lobbyChat.Content,
+                Type = lobbyChat.Type,
+                AnnouncementLevel = lobbyChat.AnnouncementLevel
+            }
+        };
+        
+        await BroadcastToLobby(responseMessage);
+    }
+    
+    // 룸 채팅 처리
+    private async Task HandleRoomChat(ChatMessage message, IServerStreamWriter<ChatMessage> responseStream, string clientId)
+    {
+        var roomChat = message.RoomChat;
+        
+        // 룸 입장/퇴장 처리
+        if (roomChat.Type == RoomMessageType.RoomJoin)
+        {
+            await JoinRoom(roomChat.RoomId, responseStream, clientId, message.UserId);
+            return;
+        }
+        else if (roomChat.Type == RoomMessageType.RoomLeave)
+        {
+            await LeaveRoom(roomChat.RoomId, clientId, message.UserId);
+            return;
+        }
+        
+        _logger.LogInformation($"[RoomChat] [{roomChat.RoomId}] {message.UserId}: {roomChat.Content}");
+        
+        var responseMessage = new ChatMessage
+        {
+            UserId = message.UserId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            RoomChat = new RoomChatMessage
+            {
+                RoomId = roomChat.RoomId,
+                Content = roomChat.Content,
+                Type = roomChat.Type,
+                TeamId = roomChat.TeamId
+            }
+        };
+        
+        await BroadcastToRoom(roomChat.RoomId, responseMessage);
+    }
+    
+    // 테스트 채팅 처리 (기존 호환용)
+    private async Task HandleTestChat(ChatMessage message, IServerStreamWriter<ChatMessage> responseStream, string clientId)
+    {
+        var testChat = message.TestChat;
+        _logger.LogInformation($"[TestChat] [{testChat.RoomId}] {message.UserId}: {testChat.Content}");
+        
+        // 기존 로직과 호환성 유지
+        switch (testChat.Type)
+        {
+            case MessageType.Join:
+                await JoinRoom(testChat.RoomId, responseStream, clientId, message.UserId);
+                
+                // 입장 메시지 생성
+                var joinMessage = new ChatMessage
+                {
+                    UserId = message.UserId,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    TestChat = new TestChatMessage
+                    {
+                        RoomId = testChat.RoomId,
+                        Content = $"{message.UserId}님이 입장했습니다",
+                        Type = MessageType.Join
+                    }
+                };
+                await BroadcastToRoom(testChat.RoomId, joinMessage);
+                break;
+                
+            case MessageType.Leave:
+                // 퇴장 메시지 생성
+                var leaveMessage = new ChatMessage
+                {
+                    UserId = message.UserId,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    TestChat = new TestChatMessage
+                    {
+                        RoomId = testChat.RoomId,
+                        Content = $"{message.UserId}님이 퇴장했습니다",
+                        Type = MessageType.Leave
+                    }
+                };
+                await BroadcastToRoom(testChat.RoomId, leaveMessage);
+                await LeaveRoom(testChat.RoomId, clientId, message.UserId);
+                break;
+                
+            case MessageType.Chat:
+                // 채팅 메시지 브로드캐스트
+                var chatMessage = new ChatMessage
+                {
+                    UserId = message.UserId,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    TestChat = new TestChatMessage
+                    {
+                        RoomId = testChat.RoomId,
+                        Content = testChat.Content,
+                        Type = MessageType.Chat
+                    }
+                };
+                await BroadcastToRoom(testChat.RoomId, chatMessage);
+                break;
+        }
+    }
+    
+    private async Task JoinRoom(string roomId, IServerStreamWriter<ChatMessage> responseStream, string clientId, string userId)
+    {
         // 기존 방에서 제거
         await RemoveClientFromRoom(clientId);
         
@@ -67,62 +201,33 @@ public class ChatServiceImpl : ChatService.ChatServiceBase
             (key, existing) => { existing.Add(responseStream); return existing; });
         
         _clientRooms[clientId] = roomId;
-        
-        Console.WriteLine($"[gRPC Chat] {userId}님이 {roomId} 방에 입장");
-        
-        // 입장 메시지를 방의 모든 클라이언트에게 브로드캐스트
-        var joinMessage = new ChatMessage
-        {
-            UserId = userId,
-            RoomId = roomId,
-            Content = $"{userId}님이 입장했습니다",
-            Type = MessageType.Join,
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        };
-        
-        await BroadcastToRoom(roomId, joinMessage);
+        _logger.LogInformation($"[ChatService] {userId}님이 {roomId} 방에 입장");
     }
     
-    private async Task HandleLeaveRoom(ChatMessage message, IServerStreamWriter<ChatMessage> responseStream, string clientId)
+    private async Task LeaveRoom(string roomId, string clientId, string userId)
     {
-        var roomId = message.RoomId;
-        var userId = message.UserId;
-        
-        Console.WriteLine($"[gRPC Chat] {userId}님이 {roomId} 방에서 퇴장");
-        
-        // 퇴장 메시지를 방의 모든 클라이언트에게 브로드캐스트
-        var leaveMessage = new ChatMessage
-        {
-            UserId = userId,
-            RoomId = roomId,
-            Content = $"{userId}님이 퇴장했습니다",
-            Type = MessageType.Leave,
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        };
-        
-        await BroadcastToRoom(roomId, leaveMessage);
         await RemoveClientFromRoom(clientId);
+        _logger.LogInformation($"[ChatService] {userId}님이 {roomId} 방에서 퇴장");
     }
     
-    private async Task HandleChatMessage(ChatMessage message, string clientId)
+    private async Task BroadcastToLobby(ChatMessage message)
     {
-        if (!_clientRooms.TryGetValue(clientId, out var roomId))
+        if (_lobbyClients.TryGetValue("lobby", out var clients))
         {
-            Console.WriteLine($"[gRPC Chat] 클라이언트 {clientId}가 방에 입장하지 않음");
-            return;
+            await BroadcastToClients(clients, message);
         }
-        
-        Console.WriteLine($"[gRPC Chat] [{roomId}] {message.UserId}: {message.Content}");
-        
-        // 채팅 메시지를 방의 모든 클라이언트에게 브로드캐스트
-        await BroadcastToRoom(roomId, message);
     }
     
     private async Task BroadcastToRoom(string roomId, ChatMessage message)
     {
-        if (!_roomClients.TryGetValue(roomId, out var clients))
-            return;
-            
+        if (_roomClients.TryGetValue(roomId, out var clients))
+        {
+            await BroadcastToClients(clients, message);
+        }
+    }
+    
+    private async Task BroadcastToClients(HashSet<IServerStreamWriter<ChatMessage>> clients, ChatMessage message)
+    {
         var tasks = new List<Task>();
         var clientsToRemove = new List<IServerStreamWriter<ChatMessage>>();
         
@@ -151,11 +256,6 @@ public class ChatServiceImpl : ChatService.ChatServiceBase
         {
             clients.Remove(client);
         }
-        
-        if (clients.Count == 0)
-        {
-            _roomClients.TryRemove(roomId, out _);
-        }
     }
     
     private async Task RemoveClientFromRoom(string clientId)
@@ -176,5 +276,21 @@ public class ChatServiceImpl : ChatService.ChatServiceBase
             }
         }
         await Task.CompletedTask;
+    }
+    
+    private async Task RemoveClientFromAll(string clientId, IServerStreamWriter<ChatMessage> responseStream)
+    {
+        // 룸에서 제거
+        await RemoveClientFromRoom(clientId);
+        
+        // 로비에서 제거
+        if (_lobbyClients.TryGetValue("lobby", out var lobbyClients))
+        {
+            lobbyClients.Remove(responseStream);
+            if (lobbyClients.Count == 0)
+            {
+                _lobbyClients.TryRemove("lobby", out _);
+            }
+        }
     }
 }

@@ -83,20 +83,19 @@ public class RoomHandler : IRoomHandler
 
         _logger.LogInformation($"[RoomHandler] 사용자 {clientInfo.UserId}이(가) 채팅방 {roomInfo.RoomId}에 입장했습니다");
 
-        // 다른 사용자들에게 입장 알림
+        // 다른 사용자들에게 입장 알림 (RoomInfo로 전송)
         await broadcastService.Broadcast(BroadcastType.ToRoomExceptUser, new GameMessage
         {
             UserId = "SYSTEM",
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ResultCode = (int)ResultCode.Success,
-            ChatMessage = new ChatMessage
+            RoomInfo = new RoomInfo
             {
                 RoomId = roomInfo.RoomId,
-                UserId = "SYSTEM",
-                Nickname = "시스템",
-                Content = $"{clientInfo.UserId}님이 입장했습니다.",
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Type = ChatType.UserJoin
+                RoomName = roomInfo.RoomName ?? $"채팅방 {roomInfo.RoomId}",
+                Users = { room.Users.Keys },
+                UserCount = room.Users.Count,
+                Action = RoomAction.JoinRoom
             }
         }, BroadcastTarget.RoomExceptUser(roomInfo.RoomId, clientInfo.UserId)); // 본인 제외
 
@@ -158,24 +157,27 @@ public class RoomHandler : IRoomHandler
 
         // UserManager를 통한 채팅방 퇴장 처리
         string currentRoomId = clientInfo.CurrentRoomId;
+        var room = _chatRooms.TryGetValue(currentRoomId, out var existingRoom) ? existingRoom : null;
         bool left = UserManager.Instance.LeaveRoom(clientInfo.UserId, currentRoomId);
         
         if (left)
         {
-            // 다른 사용자들에게 퇴장 알림
+            // 기존 ChatRoom에서도 제거
+            room?.Users.TryRemove(clientInfo.UserId, out _);
+            
+            // 다른 사용자들에게 퇴장 알림 (RoomInfo로 전송)
             await broadcastService.Broadcast(BroadcastType.ToRoom, new GameMessage
             {
                 UserId = "SYSTEM",
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 ResultCode = (int)ResultCode.Success,
-                ChatMessage = new ChatMessage
+                RoomInfo = new RoomInfo
                 {
                     RoomId = currentRoomId,
-                    UserId = "SYSTEM",
-                    Nickname = "시스템",
-                    Content = $"{clientInfo.UserId}님이 퇴장했습니다.",
-                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                    Type = ChatType.UserLeave
+                    RoomName = room?.RoomName ?? $"채팅방 {currentRoomId}",
+                    Users = { room?.Users.Keys ?? new string[0] },
+                    UserCount = room?.Users.Count ?? 0,
+                    Action = RoomAction.LeaveRoom
                 }
             }, BroadcastTarget.Room(currentRoomId));
 
@@ -207,12 +209,12 @@ public class RoomHandler : IRoomHandler
         }
 
         // 기존 ChatRoom에서도 제거 (호환성을 위해)
-        if (_chatRooms.TryGetValue(currentRoomId, out var room))
+        if (_chatRooms.TryGetValue(currentRoomId, out var roomToRemove))
         {
-            room.Users.TryRemove(clientInfo.UserId, out _);
+            roomToRemove.Users.TryRemove(clientInfo.UserId, out _);
             
             // 방이 비어있으면 삭제
-            if (room.Users.IsEmpty)
+            if (roomToRemove.Users.IsEmpty)
             {
                 _chatRooms.TryRemove(currentRoomId, out _);
                 _logger.LogInformation($"[RoomHandler] 채팅방 {currentRoomId} 삭제됨 (사용자 없음)");

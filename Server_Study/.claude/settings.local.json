@@ -19,7 +19,11 @@
       "Bash(git clean:*)",
       "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)",
       "Bash(taskkill:*)",
-      "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)"
+      "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)",
+      "Read(C:\\WORK\\Git\\0_ServerStudy\\DumyClient/**)",
+      "Bash(dir:*)",
+      "Bash(del \"Server\\Grpc\\ChatServiceImpl.cs\")",
+      "Bash(del \"C:\\WORK\\Git\\0_ServerStudy\\Server_Study\\Server\\Modules\\Chat\\DummyChatHandler.cs\")"
     ],
     "deny": [],
     "ask": [],

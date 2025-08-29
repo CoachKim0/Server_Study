@@ -22,7 +22,6 @@ message GameMessage {
     AuthUser auth_user = 10;
     Ping ping = 11;
     Kick kick = 12;
-    ChatMessage chat_message = 13;
     RoomInfo room_info = 14;
   }
 }
@@ -45,31 +44,13 @@ message Kick {
   string reason = 1;
 }
 
-// 채팅 메시지
-message ChatMessage {
-  string room_id = 1;
-  string user_id = 2;
-  string nickname = 3;
-  string content = 4;
-  int64 timestamp = 5;
-  ChatType type = 6;
-}
-
-// 채팅방 정보
+// 방 정보
 message RoomInfo {
   string room_id = 1;
   string room_name = 2;
   repeated string users = 3;
   int32 user_count = 4;
   RoomAction action = 5;
-}
-
-// 채팅 메시지 타입
-enum ChatType {
-  NORMAL_CHAT = 0;     // 일반 채팅
-  SYSTEM_MESSAGE = 1;   // 시스템 메시지
-  USER_JOIN = 2;        // 유저 입장
-  USER_LEAVE = 3;       // 유저 퇴장
 }
 
 // 방 관련 액션

@@ -22,7 +22,6 @@ message GameMessage {
     AuthUser auth_user = 10;
     Ping ping = 11;
     Kick kick = 12;
-    ChatMessage chat_message = 13;
     RoomInfo room_info = 14;
     RoomMessage room_message = 15;
     UserJoined user_joined = 16;
@@ -92,15 +91,6 @@ message BatchGameMessages {
   int64 batch_timestamp = 3;
 }
 
-// 채팅 메시지 (Server 호환용)
-message ChatMessage {
-  string room_id = 1;
-  string user_id = 2;
-  string nickname = 3;
-  string content = 4;
-  int64 timestamp = 5;
-  ChatType type = 6;
-}
 
 // 방 정보 (Server 호환용)
 message RoomInfo {
@@ -111,13 +101,6 @@ message RoomInfo {
   RoomAction action = 5;
 }
 
-// 채팅 타입 enum
-enum ChatType {
-  NORMAL_CHAT = 0;
-  SYSTEM_MESSAGE = 1;
-  USER_JOIN = 2;
-  USER_LEAVE = 3;
-}
 
 // 방 액션 enum
 enum RoomAction {

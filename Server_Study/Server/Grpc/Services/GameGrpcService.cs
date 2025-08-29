@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Server_Study.Managers;
 using Server_Study.Modules.Auth;
-using Server_Study.Modules.Chat;
 using Server_Study.Modules.Room;
 using Server_Study.Modules.Ping;
 using Server_Study.Shared.Model;
@@ -19,7 +18,6 @@ namespace Server.Grpc.Services;
 public class GameGrpcService : GameService.GameServiceBase
 {
     private readonly ILogger<GameGrpcService> _logger;
-    private readonly IChatHandler _chatHandler;
     private readonly IAuthHandler _authHandler;
     private readonly IRoomHandler _roomHandler;
     private readonly IPingHandler _pingHandler;
@@ -34,14 +32,12 @@ public class GameGrpcService : GameService.GameServiceBase
     /// 생성자 - 새 클라이언트 연결시마다 호출됩니다
     /// </summary>
     public GameGrpcService(ILogger<GameGrpcService> logger, 
-        IChatHandler chatHandler,
         IAuthHandler authHandler,
         IRoomHandler roomHandler,
         IPingHandler pingHandler,
         IBroadcastService broadcastService)
     {
         _logger = logger;
-        _chatHandler = chatHandler;
         _authHandler = authHandler;
         _roomHandler = roomHandler;
         _pingHandler = pingHandler;
@@ -122,8 +118,6 @@ public class GameGrpcService : GameService.GameServiceBase
                 _logger.LogWarning($"킥 메시지 수신: {request.Kick.Reason}");
                 return null;
 
-            case GameMessage.MessageTypeOneofCase.ChatMessage:
-                return await _chatHandler.ProcessChatMessage(request, clientInfo);
 
             case GameMessage.MessageTypeOneofCase.RoomInfo:
                 return await _roomHandler.ProcessRoomInfo(request, clientInfo, _broadcastService);
