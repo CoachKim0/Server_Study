@@ -22,12 +22,14 @@ message GameMessage {
     AuthUser auth_user = 10;
     Ping ping = 11;
     Kick kick = 12;
-    JoinRoom join_room = 13;
-    LeaveRoom leave_room = 14;
+    ChatMessage chat_message = 13;
+    RoomInfo room_info = 14;
     RoomMessage room_message = 15;
     UserJoined user_joined = 16;
     UserLeft user_left = 17;
     BatchGameMessages batch_messages = 18;
+    JoinRoom join_room = 19;
+    LeaveRoom leave_room = 20;
   }
 }
 
@@ -88,6 +90,40 @@ message BatchGameMessages {
   repeated GameMessage messages = 1;
   string batch_id = 2;
   int64 batch_timestamp = 3;
+}
+
+// 채팅 메시지 (Server 호환용)
+message ChatMessage {
+  string room_id = 1;
+  string user_id = 2;
+  string nickname = 3;
+  string content = 4;
+  int64 timestamp = 5;
+  ChatType type = 6;
+}
+
+// 방 정보 (Server 호환용)
+message RoomInfo {
+  string room_id = 1;
+  string room_name = 2;
+  repeated string users = 3;
+  int32 user_count = 4;
+  RoomAction action = 5;
+}
+
+// 채팅 타입 enum
+enum ChatType {
+  NORMAL_CHAT = 0;
+  SYSTEM_MESSAGE = 1;
+  USER_JOIN = 2;
+  USER_LEAVE = 3;
+}
+
+// 방 액션 enum
+enum RoomAction {
+  JOIN_ROOM = 0;
+  LEAVE_ROOM = 1;
+  ROOM_UPDATE = 2;
 }
 
 // 결과 코드 enum
